@@ -1,6 +1,7 @@
 import os
 import pickle
 import time
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -10,7 +11,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
-from selenium.common.exceptions import NoSuchElementException
 
 import openpyxl
 
@@ -46,7 +46,9 @@ class SalesforceAutomation:
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
-        self.driver = webdriver.Chrome(options=chrome_options)
+        service = Service()
+        options = webdriver.ChromeOptions()
+        self.driver = webdriver.Chrome(service=service, options=options)
         self.driver.maximize_window()
 
     def save_cookies(self):
@@ -160,7 +162,7 @@ class SalesforceAutomation:
             exit()
         data = [list(row) for row in sheet.iter_rows(values_only=True)]
         data = data[1:]
-        data = [sublist for sublist in data if sublist[0] != 1]
+        data = [sublist for sublist in data if sublist[0] == 0]
         return data
 
     def update_xlsx_data(self):
@@ -170,7 +172,7 @@ class SalesforceAutomation:
         for attempt in range(max_attempts):
             try:
                 element = self.wait_for_xpath(self.selectors[selector_key])
-                self.wait_for_loading_to_complete()
+                time.sleep(1)
                 select = Select(element)
                 select.select_by_visible_text(value)
                 return
@@ -179,25 +181,6 @@ class SalesforceAutomation:
                 if attempt == max_attempts - 1:
                     raise
                 time.sleep(0.5)
-
-    def wait_for_loading_to_complete(self):
-        try:
-            WebDriverWait(self.driver, 1).until(
-                EC.presence_of_element_located(
-                    (By.XPATH, "//your-loading-indicator-xpath")
-                )
-            )
-        except:
-            pass
-
-        try:
-            WebDriverWait(self.driver, 1).until(
-                EC.invisibility_of_element_located(
-                    (By.XPATH, "//your-loading-indicator-xpath")
-                )
-            )
-        except:
-            pass
 
     def run_forms(self, data):
         travel = [item for item in data if item[6] == "None"]
@@ -223,7 +206,8 @@ class SalesforceAutomation:
 
     def run_travel_form(self, data):
         print("Open travel form")
-        button = self.wait_for_xpath(self.selectors["kilometers"])
+        button = self.wait_for_element_with_text("a", "Kilometers")
+        # button = self.wait_for_xpath(self.selectors["kilometers"])
         button.click()
 
         for i, date in enumerate(data):
@@ -231,7 +215,9 @@ class SalesforceAutomation:
             self.wait_for_ec(self.selectors["datefield"])
             time.sleep(1)
             input = self.wait_for_xpath(self.selectors["datefield"])
-            input.send_keys(date[1])
+            if isinstance(date[1], datetime):
+                date_string = date[1].strftime("%d-%m-%Y")
+            input.send_keys(date_string)
 
             self.select_dropdown_value("traveltype", date[2])
             self.select_dropdown_value("transporttype", date[3])
@@ -269,15 +255,20 @@ class SalesforceAutomation:
         print("Done with travel form")
 
     def run_homework_form(self, data):
+        print(data)
         print("Open homework form")
-        button = self.wait_for_xpath(self.selectors["uren"])
+        button = self.wait_for_element_with_text("a", "Aantal/Uren")
+
+        # button = self.wait_for_xpath(self.selectors["uren"])
         button.click()
         time.sleep(1)
 
         for i, date in enumerate(data):
             print("Processing homework data")
             input = self.wait_for_xpath(self.selectors["uren_date"])
-            input.send_keys(date[1])
+            if isinstance(date[1], datetime):
+                date_string = date[1].strftime("%d-%m-%Y")
+            input.send_keys(date_string)
 
             self.select_dropdown_value("uren_type", date[6])
 
@@ -346,12 +337,29 @@ class SalesforceAutomation:
         except Exception as e:
             print(f"An error occurred: {e}")
 
+    def wait_for_element_with_text(self, element_type, text_term, timeout=10):
+        try:
+            xpath = f"//{element_type}[contains(text(), '{text_term}')]"
+            element = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((By.XPATH, xpath))
+            )
+
+            return element
+
+        except TimeoutException:
+            print(
+                f"Timeout: Element '{element_type}' with text '{text_term}' not found within {timeout} seconds"
+            )
+            return None
+        except Exception as e:
+            print(f"Error occurred: {str(e)}")
+            return None
+
     def run(self):
         data = self.load_xlsx_data()
         self.setup_web()
         self.run_forms(data)
-        time.sleep(300)
-
+        input("Press enter to exit....")
         self.driver.quit()
 
 
